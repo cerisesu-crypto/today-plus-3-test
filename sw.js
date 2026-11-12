@@ -1,4 +1,4 @@
-const CACHE = 'today-plus-v8';
+const CACHE = 'today-plus-v9';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './config.js', './manifest.webmanifest'];
 
 self.addEventListener('install', event => {
