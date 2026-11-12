@@ -1,24 +1,23 @@
 # TODAY+ 3.0 測試版
 
-本資料夾由 TODAY+ 2.1 六個檔案複製而來；原始 2.1 資料夾未修改。3.0 加入 Google 登入與 Supabase `tasks` 雲端同步。分類、優先順序、日期、時段、備註等舊版專屬資料存於 `tasks.app_data` JSON 欄位：
+3.0 是獨立測試站；TODAY+ 2.1 原版未覆蓋。使用 Google OAuth 登入，任務存在 Supabase `tasks`，每次只查詢登入者的 `user_id`。資料欄位對照：日期／時段／小時→`due_date`／`time_period`／`due_hour`；分鐘和舊版備註→`app_data`；優先順序轉成資料庫使用的「高／一般／低」。Google Calendar 雙向同步尚未實作。
 
-- `id` → Supabase UUID；新建任務用 UUID，舊版字串 ID 在首次雲端同步時轉成 UUID
-- `title` → `title`
-- 日期／時段／小時 → `due_date`、`time_period`、`due_hour`
-- 分類／優先順序／完成狀態 → `category`、`priority`、`is_completed`
-- 備註 → `description` 及 `app_data.note`
-- Google Calendar 欄位由此版本保留，不由任務同步覆寫
+## 跨裝置測試步驟
 
-## 部署步驟
+1. 手機與筆電開啟同一個測試網址，使用同一個 Google 帳號登入。若任務仍不一致，請確認兩個登入 session 的 Supabase user UUID 相同。
+2. 手機新增一筆專用測試任務，等狀態顯示「已同步到雲端」。
+3. 筆電重新整理，確認同一任務出現且同步狀態成功。程式依登入者 UUID 查詢 `tasks`；若同 ID 的雲端資料存在，以雲端版本為準，本機資料不會蓋過它。
+4. 在任一裝置編輯測試任務或切換完成狀態，等同步成功後，在另一裝置重新整理確認更新。
+5. 刪除專用測試任務，等刪除完成後到另一裝置重新整理，確認任務消失。刪除使用 `app_data.deleted` 軟刪除標記，不會永久移除資料列。
+6. 若狀態顯示同步失敗或讀取失敗，資料仍保留在本機；恢復網路後重新整理或再操作一次重試。只有雲端寫入成功並讀回後才顯示同步成功。
 
-1. 在 Supabase SQL Editor 執行 `migrations/202611120002_today_plus_app_data.sql`。此遷移依照已核對的 `tasks` 欄位清單，只新增 `app_data` JSON 欄位，不重建資料表或更改現有 RLS。
-2. 確認 Google provider 已啟用，Supabase URL Configuration 的 Redirect URLs 允許測試網址。正式 Site URL 保持 `https://cerisesu-crypto.github.io/today-plus/`。
-3. 將本資料夾內容放入**新的 GitHub repository**（例如 `today-plus-3-test`），啟用該 repository 的 GitHub Pages。不要推送到正式 TODAY+ repository 的 Pages 來源或替換其中 2.1 檔案。
-4. 取得新測試站網址後，將它加入 Supabase Auth Redirect URLs。`config.js` 已填 Supabase URL 和 publishable key；publishable key 可放在瀏覽器端。不得加入 Google Client Secret、refresh token 或 `service_role`。
-5. 開啟測試站，使用 Google 登入，新增、修改、完成、刪除測試任務，重新整理並於另一個已登入瀏覽器查看資料。確認 RLS 僅允許 `user_id = auth.uid()`。
+## 部署與安全
 
-## 尚未驗證／未實作
+- 測試站：https://cerisesu-crypto.github.io/today-plus-3-test/
+- Supabase Redirect URLs 必須允許以上完整網址；正式 Site URL 保持 `https://cerisesu-crypto.github.io/today-plus/`。
+- 瀏覽器端只放 Supabase URL 和 publishable key。Google Client Secret、refresh token、`service_role` 不可放入前端。
+- `tasks` 的 RLS 應限制 `user_id = auth.uid()`。
 
-程式已接入 Google OAuth 登入與 `tasks` CRUD，同步仍未在部署環境驗證。初次登入會合併本機與雲端任務；相同 ID 時保留雲端版本。刪除會呼叫 Supabase 刪除 API；離線刪除不會排隊，且登入前刪除不會自動同步到雲端。
+## Google Calendar 後續
 
-Google Calendar 雙向同步未實作。目前登入流程沒有要求 Calendar scopes，也沒有安全的 server-side refresh-token 流程。最少下一步：在 Google Cloud 啟用 Calendar API，另建受登入 JWT 保護的 Supabase Edge Function OAuth 授權碼流程，要求 `https://www.googleapis.com/auth/calendar.events`（讀寫事件）及 `https://www.googleapis.com/auth/calendar.calendarlist.readonly`（列出使用者訂閱的日曆），並帶 `access_type=offline`；將 refresh token 安全存於 Vault，再由函式負責日曆同步。Google 只有在離線授權下才提供 refresh token，Supabase Auth 也不會替應用自動刷新 Google provider token；不要把 Google access/refresh token 放進前端。
+目前登入未要求 Calendar 權限。後續需啟用 Google Calendar API，採用受使用者登入 JWT 保護的 Supabase Edge Function 處理 Google OAuth 授權碼及 token refresh；refresh token 必須安全存於伺服器端，例如 Vault。前端不可持有 Google Client Secret 或 refresh token。
